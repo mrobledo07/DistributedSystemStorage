@@ -1,0 +1,7 @@
+perf_key:perf_value
+hola:bones
+adeu:hola
+sistema:distribuit
+a:z
+b:h
+k:w

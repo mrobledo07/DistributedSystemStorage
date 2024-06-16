@@ -1,0 +1,6 @@
+perf_key:perf_value
+hola:bones
+adeu:hola
+sistema:operatiu
+a:z
+k:w

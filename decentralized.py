@@ -134,17 +134,16 @@ def read_file(file_path):
 
     try:
         with open(file_path, 'r') as file:
-            for i, line in enumerate(file):
-                if ":" not in line:
-                    del file[i]
             for line in file:
-                key, value = line.strip().split(':')
-                dictionary[key] = value
+                if ":" in line:
+                    key, value = line.strip().split(':')
+                    dictionary[key] = value
     except FileNotFoundError:
         #print(f"Couldn't find the file {file_path}")
         pass
 
     return dictionary
+
 
 # Starts node at given ip and port
 def server_node(node_config):
