@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package distributedstore;
+
+// to compile
+// python3 -m grpc_tools.protoc -I./ --python_out=. --grpc_python_out=. --pyi_out=. ./proto/store.proto
+
+service KeyValueStore {
+  rpc put(PutRequest) returns (PutResponse);
+
+  rpc get(GetRequest) returns (GetResponse);
+
+  rpc canCommit(CanCommitPetition) returns (CanCommitResponse);
+
+  rpc doCommit(PutRequest) returns (HaveCommited);
+
+  rpc askVote(VoteRequest) returns (VoteResponse);
+
+  rpc slowDown(SlowDownRequest) returns (SlowDownResponse);
+
+  rpc restore(RestoreRequest) returns (RestoreResponse);
+
+  rpc notifyMaster(SlaveConfiguration) returns (NotifySuccess);
+}
+
+message PutRequest {
+  string key = 1;
+  string value = 2;
+}
+
+message PutResponse {
+  bool success = 1;
+}
+
+message GetRequest {
+  string key = 1;
+}
+
+message GetResponse {
+  string value = 1;
+  bool found = 2;
+}
+
+message CanCommitPetition {
+  string key = 1;
+}
+
+message CanCommitResponse {
+  bool available = 1;
+}
+
+// Do commit message taken from PutRequest message
+message HaveCommited {
+  bool haveCommited = 1;
+}
+
+message VoteRequest {
+  string key = 1;
+}
+
+message VoteResponse {
+  int32 vote = 1;
+}
+
+message SlowDownRequest {
+  int32 seconds = 1;
+}
+
+message SlowDownResponse {
+  bool success = 1;
+}
+
+message RestoreRequest {}
+
+message RestoreResponse {
+  bool success = 1;
+}
+
+message SlaveConfiguration {
+  string config = 1;
+}
+
+message NotifySuccess {
+  bool success = 1;
+}
+
+message Empty {}
