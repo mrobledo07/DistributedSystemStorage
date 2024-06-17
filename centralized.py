@@ -33,7 +33,6 @@ with open('centralized_config.yaml', 'r') as conf:
 class KeyValueStoreServicer(store_pb2_grpc.KeyValueStoreServicer):
     def __init__(self, config):
         self.slave_nodes = set()
-        self.slave_nodes_lock = multiprocessing.Lock()
         self.delay = 0
         self.responses = set()
         self.file = f"saves/centralized/{config}.txt"
@@ -101,8 +100,7 @@ class KeyValueStoreServicer(store_pb2_grpc.KeyValueStoreServicer):
         return store_pb2.RestoreResponse(success=True)
 
     def notifyMaster(self, request, context):
-        with self.slave_nodes_lock:
-            self.slave_nodes.add(request.config)
+        self.slave_nodes.add(request.config)
         return store_pb2.NotifySuccess(success=True)
 
 
