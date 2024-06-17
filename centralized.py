@@ -11,7 +11,6 @@ import time
 import store_pb2
 import store_pb2_grpc
 
-import logging
 from filelock import FileLock
 
 import signal
@@ -23,8 +22,6 @@ def handle_sigterm(signum, frame):
 
 signal.signal(signal.SIGTERM, handle_sigterm)
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 # Loads centralized configuration
@@ -44,6 +41,8 @@ class KeyValueStoreServicer(store_pb2_grpc.KeyValueStoreServicer):
 
     # Only master node receives put requests, with 2PC the information gets replicated to slave nodes
     def put(self, request, context):
+        time.sleep(self.delay)  # Simulates a node delay
+
         # 2PC - Phase 1: can commit
         for slave in self.slave_nodes:
             try:
@@ -51,7 +50,7 @@ class KeyValueStoreServicer(store_pb2_grpc.KeyValueStoreServicer):
                 stub = store_pb2_grpc.KeyValueStoreStub(channel)
                 stub.canCommit(store_pb2.CanCommitPetition(key=request.key))
             except Exception as e:
-                logger.info(f"Error asking for commit on slave {slave}. Error: {e}")
+                print(f"Error asking for commit on slave {slave}. Error: {e}")
                 return store_pb2.PutResponse(success=False)
         
         # 2PC - Phase 2: do commit
@@ -61,12 +60,10 @@ class KeyValueStoreServicer(store_pb2_grpc.KeyValueStoreServicer):
                 stub = store_pb2_grpc.KeyValueStoreStub(channel)
                 stub.doCommit(store_pb2.PutRequest(key=request.key, value=request.value))
             except Exception as e:
-                logger.info(f"Error committing on slave {slave}. Error: {e}")
+                print(f"Error committing on slave {slave}. Error: {e}")
         
         # Once all salves have commited, master commits
-        persistent_save(request.key, request.value, self.file)
-        time.sleep(self.delay)  # Simulates a node delay
-        self.kv_dict[request.key] = request.value
+        persistent_save(request.key, request.value, self.file, self.kv_dict)
 
         return store_pb2.PutResponse(success=True)
     
@@ -88,9 +85,8 @@ class KeyValueStoreServicer(store_pb2_grpc.KeyValueStoreServicer):
 
     # Second phase of the 2PC protocol. Slave node proceeds to commit the key-value tuple
     def doCommit(self, request, context):
-        persistent_save(request.key, request.value, self.file)
         time.sleep(self.delay)
-        self.kv_dict[request.key] = request.value
+        persistent_save(request.key, request.value, self.file, self.kv_dict)
 
         return store_pb2.HaveCommited(haveCommited=True) 
     
@@ -111,34 +107,15 @@ class KeyValueStoreServicer(store_pb2_grpc.KeyValueStoreServicer):
 
 
 # Saves the key-value information on a file (saves/<ip>:<port>.txt)
-def persistent_save(key, value, file_path):
+def persistent_save(key, value, file_path, kv_dict):
     lock_path = file_path + '.lock'
     lock = FileLock(lock_path)
-
-    
     with lock:
-        try:
-            with open(file_path, 'r') as file:
-                lines = file.readlines()
+        kv_dict[key] = value
+        with open(file_path, 'w') as file:
+            for k, v in kv_dict.items():
+                file.write(f"{k}:{v}\n")
     
-            found = False
-            for i, line in enumerate(lines):
-                if line.startswith(f"{key}:"):
-                    lines[i] = f"{key}:{value}\n"
-                    found = True
-                    break
-    
-            if not found:
-                lines.append(f"{key}:{value}\n")
-    
-            with open(file_path, 'w') as file:
-                file.writelines(lines)
-    
-        except FileNotFoundError:
-            with open(file_path, 'w') as file:
-                file.write(f"{key}:{value}\n")
-    
-
 
 # Reads content on persistent node text file
 def read_file(file_path):

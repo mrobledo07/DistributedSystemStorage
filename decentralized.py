@@ -11,6 +11,18 @@ import time
 import store_pb2
 import store_pb2_grpc
 
+
+from filelock import FileLock
+
+import signal
+
+def handle_sigterm(signum, frame):
+    for p in multiprocessing.active_children():
+        p.terminate()
+    os._exit(0)
+
+signal.signal(signal.SIGTERM, handle_sigterm)
+
 # Loads centralized configuration
 with open('decentralized_config.yaml', 'r') as conf:
     config = yaml.safe_load(conf)
@@ -84,15 +96,13 @@ class KeyValueStoreServicer(store_pb2_grpc.KeyValueStoreServicer):
 
     # If voting succeeded, all nodes commit the key-value pair
     def doCommit(self, request, context):
-        persistent_save(request.key, request.value, self.file)
         time.sleep(self.delay)
-        self.kv_dict[request.key] = request.value 
+        persistent_save(request.key, request.value, self.file, self.kv_dict)
 
         return store_pb2.HaveCommited(haveCommited=True) 
 
     # Returns his own weight as a response of a vote request
     def askVote(self, request, context):
-        x = self.weight
         return store_pb2.VoteResponse(vote=self.weight)
     
     # Adds X seconds of delay to a node. That is to simulate defective nodes and network partitions
@@ -106,44 +116,32 @@ class KeyValueStoreServicer(store_pb2_grpc.KeyValueStoreServicer):
         return store_pb2.RestoreResponse(success=True)
 
 # Saves the key-value information on a file (saves/<ip>:<port>.txt)
-def persistent_save(key, value, file_path):
-    try:
-        with open(file_path, 'r') as file:
-            file_content = file.readlines()
-    except FileNotFoundError:
+def persistent_save(key, value, file_path, kv_dict):
+    lock_path = file_path + '.lock'
+    lock = FileLock(lock_path)
+    with lock:
+        kv_dict[key] = value
         with open(file_path, 'w') as file:
-            file.write(f"{key}:{value}\n")
-        return
-    else:
-        line_found = False
-        for i, line in enumerate(file_content):
-            if line.startswith(f"{key}:"):
-                file_content[i] = f"{key}:{value}\n"
-                line_found = True
-                break
-
-    if not line_found:
-        file_content.append(f"{key}:{value}\n")
-
-    with open(file_path, 'w') as file:
-        file.writelines(file_content)
+            for k, v in kv_dict.items():
+                file.write(f"{k}:{v}\n")
+    
 
 # Reads content on persistent node text file
 def read_file(file_path):
+    lock_path = file_path + '.lock'
+    lock = FileLock(lock_path)
     dictionary = dict()
-
-    try:
-        with open(file_path, 'r') as file:
-            for line in file:
-                if ":" in line:
-                    key, value = line.strip().split(':')
-                    dictionary[key] = value
-    except FileNotFoundError:
-        #print(f"Couldn't find the file {file_path}")
-        pass
+    with lock:
+        try:
+            with open(file_path, 'r') as file:
+                for line in file:
+                    if ":" in line:
+                        key, value = line.strip().split(':')
+                        dictionary[key] = value
+        except FileNotFoundError:
+            pass
 
     return dictionary
-
 
 # Starts node at given ip and port
 def server_node(node_config):
