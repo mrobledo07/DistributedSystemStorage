@@ -12,7 +12,6 @@ import store_pb2
 import store_pb2_grpc
 
 
-from filelock import FileLock
 
 import signal
 
@@ -117,28 +116,22 @@ class KeyValueStoreServicer(store_pb2_grpc.KeyValueStoreServicer):
 
 # Saves the key-value information on a file (saves/<ip>:<port>.txt)
 def persistent_save(key, value, file_path, kv_dict):
-    lock_path = file_path + '.lock'
-    lock = FileLock(lock_path)
-    with lock:
-        kv_dict[key] = value
-        with open(file_path, 'w') as file:
+    kv_dict[key] = value
+    with open(file_path, 'w') as file:
             for k, v in kv_dict.items():
                 file.write(f"{k}:{v}\n")
     
 
 # Reads content on persistent node text file
 def read_file(file_path):
-    lock_path = file_path + '.lock'
-    lock = FileLock(lock_path)
     dictionary = dict()
-    with lock:
-        try:
+    try:
             with open(file_path, 'r') as file:
                 for line in file:
                     if ":" in line:
                         key, value = line.strip().split(':')
                         dictionary[key] = value
-        except FileNotFoundError:
+    except FileNotFoundError:
             pass
 
     return dictionary
