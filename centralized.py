@@ -11,6 +11,21 @@ import time
 import store_pb2
 import store_pb2_grpc
 
+import logging
+from filelock import FileLock
+
+import signal
+
+def handle_sigterm(signum, frame):
+    for p in multiprocessing.active_children():
+        p.terminate()
+    os._exit(0)
+
+signal.signal(signal.SIGTERM, handle_sigterm)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 # Loads centralized configuration
 with open('centralized_config.yaml', 'r') as conf:
@@ -21,6 +36,7 @@ with open('centralized_config.yaml', 'r') as conf:
 class KeyValueStoreServicer(store_pb2_grpc.KeyValueStoreServicer):
     def __init__(self, config):
         self.slave_nodes = set()
+        self.slave_nodes_lock = multiprocessing.Lock()
         self.delay = 0
         self.responses = set()
         self.file = f"saves/centralized/{config}.txt"
@@ -30,19 +46,23 @@ class KeyValueStoreServicer(store_pb2_grpc.KeyValueStoreServicer):
     def put(self, request, context):
         # 2PC - Phase 1: can commit
         for slave in self.slave_nodes:
-            channel = grpc.insecure_channel(slave)
-            stub = store_pb2_grpc.KeyValueStoreStub(channel)
-            response = stub.canCommit(store_pb2.CanCommitPetition(key=request.key))
-
-            if not response.available:    # If some slave node cannot commit, abort
+            try:
+                channel = grpc.insecure_channel(slave)
+                stub = store_pb2_grpc.KeyValueStoreStub(channel)
+                stub.canCommit(store_pb2.CanCommitPetition(key=request.key))
+            except Exception as e:
+                logger.info(f"Error asking for commit on slave {slave}. Error: {e}")
                 return store_pb2.PutResponse(success=False)
         
         # 2PC - Phase 2: do commit
         for slave in self.slave_nodes:
-            channel = grpc.insecure_channel(slave)
-            stub = store_pb2_grpc.KeyValueStoreStub(channel)
-            response = (stub.doCommit(store_pb2.PutRequest(key=request.key, value=request.value)))
-
+            try:
+                channel = grpc.insecure_channel(slave)
+                stub = store_pb2_grpc.KeyValueStoreStub(channel)
+                stub.doCommit(store_pb2.PutRequest(key=request.key, value=request.value))
+            except Exception as e:
+                logger.info(f"Error committing on slave {slave}. Error: {e}")
+        
         # Once all salves have commited, master commits
         persistent_save(request.key, request.value, self.file)
         time.sleep(self.delay)  # Simulates a node delay
@@ -84,47 +104,56 @@ class KeyValueStoreServicer(store_pb2_grpc.KeyValueStoreServicer):
         self.delay = 0
         return store_pb2.RestoreResponse(success=True)
 
-    # A slave node notifies the master node, so it can reach him at 2PC protocol
     def notifyMaster(self, request, context):
-        self.slave_nodes.add(request.config)
+        with self.slave_nodes_lock:
+            self.slave_nodes.add(request.config)
         return store_pb2.NotifySuccess(success=True)
+
 
 # Saves the key-value information on a file (saves/<ip>:<port>.txt)
 def persistent_save(key, value, file_path):
-    try:
-        with open(file_path, 'r') as file:
-            file_content = file.readlines()
-    except FileNotFoundError:
-        with open(file_path, 'w') as file:
-            file.write(f"{key}:{value}\n")
-        return
-    else:
-        line_found = False
-        for i, line in enumerate(file_content):
-            if line.startswith(f"{key}:"):
-                file_content[i] = f"{key}:{value}\n"
-                line_found = True
-                break
+    lock_path = file_path + '.lock'
+    lock = FileLock(lock_path)
 
-    if not line_found:
-        file_content.append(f"{key}:{value}\n")
+    
+    with lock:
+        try:
+            with open(file_path, 'r') as file:
+                lines = file.readlines()
+    
+            found = False
+            for i, line in enumerate(lines):
+                if line.startswith(f"{key}:"):
+                    lines[i] = f"{key}:{value}\n"
+                    found = True
+                    break
+    
+            if not found:
+                lines.append(f"{key}:{value}\n")
+    
+            with open(file_path, 'w') as file:
+                file.writelines(lines)
+    
+        except FileNotFoundError:
+            with open(file_path, 'w') as file:
+                file.write(f"{key}:{value}\n")
+    
 
-    with open(file_path, 'w') as file:
-        file.writelines(file_content)
 
 # Reads content on persistent node text file
 def read_file(file_path):
+    lock_path = file_path + '.lock'
+    lock = FileLock(lock_path)
     dictionary = dict()
-
-    try:
-        with open(file_path, 'r') as file:
-            for line in file:
-                if ":" in line:
-                    key, value = line.strip().split(':')
-                    dictionary[key] = value
-    except FileNotFoundError:
-        #print(f"Couldn't find the file {file_path}")
-        pass
+    with lock:
+        try:
+            with open(file_path, 'r') as file:
+                for line in file:
+                    if ":" in line:
+                        key, value = line.strip().split(':')
+                        dictionary[key] = value
+        except FileNotFoundError:
+            pass
 
     return dictionary
 
@@ -167,6 +196,7 @@ if __name__ == '__main__':
         slave_process = multiprocessing.Process(target=server_slave, args=(slave_config,))
         slave_processes.append(slave_process)
         slave_process.start()
+
 
     master_process.join()
     for slave_process in slave_processes:
