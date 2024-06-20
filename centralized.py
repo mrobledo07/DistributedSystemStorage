@@ -114,7 +114,9 @@ def persistent_save(key, value, file_path, kv_dict):
 # Reads content on persistent node text file
 def read_file(file_path):
     dictionary = dict()
-    try:
+    if not os.path.exists(os.path.dirname(file_path)):
+        os.makedirs(os.path.dirname(file_path))
+    try:    
             with open(file_path, 'r') as file:
                 for line in file:
                     if ":" in line:
