@@ -91,3 +91,8 @@ Project/
 Each component of the project is organized into its respective directory, facilitating clear separation of concerns and ease of navigation. The `eval` directory specifically houses test scripts for evaluating the functionality and correctness of the implemented systems.
 
 > **Note:** Students are required to define the necessary stubs for implementing the Two Phase Commit (2PC) protocol and for node registration in the system. These stubs must be manually added to the store.proto file by the students as part of their implementation.
+> 
+
+## Developers
+Miguel Robledo Kusz
+Victor Fosch Tena
