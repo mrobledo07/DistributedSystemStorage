@@ -93,6 +93,11 @@ Each component of the project is organized into its respective directory, facili
 > **Note:** Students are required to define the necessary stubs for implementing the Two Phase Commit (2PC) protocol and for node registration in the system. These stubs must be manually added to the store.proto file by the students as part of their implementation.
 > 
 
-## Developers
-Miguel Robledo Kusz
-Victor Fosch Tena
+## 👨‍💻 Developers
+
+- Miguel Robledo Kusz  
+- Víctor Fosch Tena
+
+## 📚 Academic Context
+
+This project was developed as part of the *Distributed Systems* course at the **Universitat Rovira i Virgili (URV)** in Tarragona, Spain.
